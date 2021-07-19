@@ -1,8 +1,19 @@
 # Generic sound class to store sound synthesizer files
 import numpy as np
 import math
+from scipy.signal import butter, lfilter, sawtooth, windows
+
+from numpy.random import seed
+
+dssynthseed=18005551212
+dssynthsr=16000
 
 class MyParam():
+    '''
+        Provides API for parameter creation, getting, setting
+        @cb - a callback function to execute when the parameter changes.
+        @synth_doc - documentation for mapping information from input units
+    '''    
     def __init__(self,name,min,max, val, cb,synth_doc) :
         self.name=name
         self.min=min
@@ -23,31 +34,41 @@ class MyParam():
     This is *the* interface for all synths.
 '''
 class MySoundModel() :
-
-    def __init__(self,sr=16000, rng=None) :
+    '''
+        @rngseed - If None, will use random seed
+    '''
+    def __init__(self,sr=dssynthsr, rngseed=dssynthseed) :
         self.param = {} # a dictionary of MyParams
-        self.sr = sr
-        if rng==None :
-            print(f"{self.__class__.__name__} creating new RNG")
-            self.rng = np.random.default_rng(18005551212)
+        self.sr = sr 
+        self.rng = np.random.default_rng(rngseed)
+        if rngseed==None :
+            print(f"{self.__class__.__name__} creating rng with random seed")
+        elif rngseed==dssynthseed :
+            print(f"{self.__class__.__name__} creating rng with default seed")
         else :
-            self.rng = rng
+            print(f"{self.__class__.__name__} creating rng with user seed") 
+
 
 
     def __addParam__(self, name,min,max,val, cb=None, synth_doc="") :
-        self.param[name]=MyParam(name,min,max,val, cb,synth_doc)
+        self.param[name]=MyParam(name,min,max,val, cb, synth_doc)
 
 
     def setParam(self, name, value) :
+        self.param[name].val=value
         if self.param[name].cb is not None :
             self.param[name].cb(value)
-        self.param[name].val=value
+        assert self.param[name].val <= self.param[name].max and self.param[name].val >=  self.param[name].min, f"setParam({name}, {value})  param val {self.param[name]} ({self.param[name].val}) out of range [{self.param[name].min},{self.param[name].max}]"
+        
 
     ''' set parameters using [0,1] which gets mapped to [min, max] '''
     def setParamNorm(self, name, nvalue) :
-        if self.param[name].cb is not None :
-            self.param[name].cb(self.getParam(name))
         self.param[name].__setParamNorm__(nvalue)
+        if self.param[name].cb is not None :
+            # Pass the "natural units" value of the parameter to the callback, not the normed.
+            self.param[name].cb(self.getParam(name))
+        assert self.param[name].val <= self.param[name].max and self.param[name].val >=  self.param[name].min, f"setParamNorm({name}, {nvalue}) : param val {self.param[name]} ({self.param[name].val}) out of range [{self.param[name].min},{self.param[name].max}]"
+        
 
     def getParam(self, name, prop="val") :
         if prop == "val" :
@@ -85,7 +106,7 @@ class MySoundModel() :
     def printParams(self):
         paramVals = self.paramProps()
         for params in paramVals:
-            print( "Name: ", params.name, " Current value : ", params.val, " Max value ", params.max, " Min value ", params.min, "Synth Doc", params.synth_doc )
+            print( "Name: ", params.name, " Current value : ", params.val, ", Min value ", params.min, ", Max value ", params.max,  ", synth_doc: ", params.synth_doc )
 
 ##################################################################################################
 # A Ensemble class for playing a bunch of DSSynth models together
@@ -96,9 +117,12 @@ class MySoundModel() :
     The factory takes an optional argument for a list of amplitudes that, if used, must be the same length as the models list.
     The generate function takes a spreadSecs argument that lest you spread out start times evenly over an interval.
 '''
-class DSEnsemble(MySoundModel) :
-    def __init__(self,  models=[], amp=[], rng=None) :
-        MySoundModel.__init__(self)
+class DSEnsemble(MySoundModel) : 
+    '''
+        @rngseed - If None, will use random seed
+    '''
+    def __init__(self,  models=[], amp=[], sr=dssynthsr, rngseed=dssynthseed) :
+        MySoundModel.__init__(self, sr=dssynthsr, rngseed=dssynthseed)
         self.numModels= len(models)
         self.models=models
         if len(amp) != len(models) :
@@ -109,11 +133,11 @@ class DSEnsemble(MySoundModel) :
     def generate(self,  durationSecs, spreadSecs=1) :
         numSamples=int(self.sr*durationSecs)
         spreadsamples=int(self.sr*spreadSecs)
-
+        
         sig=np.zeros(numSamples+spreadsamples)
         for i in range (self.numModels) :
-            gensig = self.amp[i]*self.models[i].generate(durationSecs)
-            sig = addin(gensig, sig, self.rng.integers(0,spreadsamples))
+            gensig = self.amp[i]*self.models[i].generate(durationSecs) 
+            sig = addin(gensig, sig, self.rng.integers(0,spreadsamples)) 
         return sig[:numSamples]
 
 
@@ -124,23 +148,19 @@ class DSEnsemble(MySoundModel) :
 creates a list of event times that happen with a rate of 2^r_exp
       and deviate from the strict equal space according to irreg_exp
 
-      @rng - If None, uses fixed seed for repeatability. Otherwise, provide your own, seeded for repeatability or not.
-                default: rng = np.random.default_rng(18005551212)
+      @rngseed - If None, will use random seed
+      @irreg_exp - [0-1] -> (as power of 10) to standard deviation in [0,1] normalized by event spacing; 0 is regular, 1 sounds uniformly random
       @wrap - mode by duration so that anything that fell off either end is wrapped back in to [0,durationSecs]
       @roll - shift all events so that first one starts at time 0
 '''
-def noisySpacingTimeList(rate_exp, irreg_exp, durationSecs,  rng=None, verbose=False, wrap=True, roll=False) :
-
-    if rng==None :
-        rng = np.random.default_rng(18005551212)
+def noisySpacingTimeList(rate_exp, irreg_exp, durationSecs,  rngseed, verbose=False, wrap=True, roll=False) :
+    rng = np.random.default_rng(seed=rngseed)
 
     # mapping to the right range units
     eps=np.power(2.,rate_exp)
     irregularity=.1*irreg_exp*np.power(10,irreg_exp)
     #irregularity=.04*np.power(10,irreg_exp)
     sd=irregularity/eps
-
-    #print("eps = {}, irreg = {}, and sd = {}".format(eps, irregularity, sd))
 
     linspacesteps=int(eps*durationSecs)
     linspacedur = linspacesteps/eps
@@ -162,11 +182,12 @@ def noisySpacingTimeList(rate_exp, irreg_exp, durationSecs,  rng=None, verbose=F
     if verbose :
         print(f'noisySpacingTimeList: (wrapped, rolled) eventtimes =  {eventtimes}')
 
+
     return eventtimes #sort because we "wrap around" any events that go off the edge of [0. durationSecs]
 
 
 
-''' convert a list of floats (time in siconds) to a signal with pulses at those time '''
+''' convert a list of floats (time in seconds) to a signal with pulses at those time '''
 def timeList2Sig(elist, sr, durationSecs) :
     numsamps=sr*durationSecs
     sig=np.zeros(numsamps)
@@ -197,7 +218,7 @@ sound over time. Used for creating amplitude envelopes or frequency sweeps.'''
 '''Linearly interpolates from start to stop val
    Startval: Float, int
    Stopval: Float, int
-'''
+''' 
 def gesture(startVal, stopVal, cutOff, numSamples):
         gesture = np.zeros(numSamples)
         non_zero = np.linspace(startVal, stopVal, int(cutOff*numSamples))
@@ -207,14 +228,14 @@ def gesture(startVal, stopVal, cutOff, numSamples):
 
 '''Generic gesture creates 2 linear interpolations.'''
 ''' Startval: Float, int
-    Stopval: Float, int
+    Stopval: Float, int 
     2 interpolations: Start to stop, and stop to start
 '''
 def genericGesture(startVal, stopVal, cutOff, numSamples):
         gesture = np.zeros(numSamples)
         ascending = np.linspace(startVal, stopVal, int(cutOff*numSamples))
         descending = np.linspace(stopVal, startVal, numSamples - int(cutOff*numSamples))
-
+        
         for index in range(len(ascending)):
             gesture[index] = ascending[index]
         for index in range(len(descending)):
@@ -237,3 +258,91 @@ def oct2freq(octs, bf=440.) :
 
 def freq2oct(freq, bf=440.) :
     return np.log2(freq/bf)
+
+def gwindow(m) :
+    '''
+        Gaussian window
+        @m - the number of samples for your gaussian, uses sd=m/6 to get near-zero at tails 
+        @return - array storing samples of a symmetric gaussian 
+    '''
+    return windows.gaussian(m,m/6)
+
+def expdecay(t, dur, attack_s=0, decay_s=0, tscale=3) :
+    '''
+    Exponential decay window
+    @t - time in seconds
+    @dur - duration in seconds to go from 1 to exp(-tscale)
+    @attack_s - linear ramp attack time in seconds
+    @decay_s - linear ramp decay time in seconds
+    @tscale - default=3, so signals decays from 1 to exp(-3) =.05 over the duration in seconds.
+    '''
+    scale=1
+    if (attack_s!=0 and t<attack_s) : scale=t/attack_s
+    if (decay_s!=0 and t>(dur-decay_s)) : scale=(dur-t)/decay_s
+    return scale*np.exp(-tscale*t/(dur))
+#########################################
+
+def randomLPContour(numSamples, cutoff, sr, rngseed, order=5,  ymin=0, ymax=1) :
+    '''
+        Create a contour ranging smoothly and randomly between ymin and ymax. 
+
+        @numSamples - of the returned array
+        @ cutoff - lp cutoff in Hz
+        @sr - sample rate
+        @order - of Butterworth LP filter
+        @ymin, @ymax -  mapped to this range
+        @rngseed - If None, will use random seed 
+    '''
+    rng = np.random.default_rng(rngseed)
+
+    # start with random noise
+    rawg=rng.random(size=numSamples+sr) #zero mean gaussian noise, extra second to 'warm up' lp filter
+    # lp filter to smooth the motion
+    critical_cutoff_val=10.
+    if cutoff < critical_cutoff_val :
+        print('WARNING, cutoff below critical cutoff value of {critical_cutoff_val} Hz, using resampling hack to get lower frequency')
+        rsampfactor = critical_cutoff_val/cutoff
+        templped = butter_lowpass_filter(rawg, critical_cutoff_val, sr, order)[-numSamples:]
+        sample=np.linspace(0,int(numSamples/rsampfactor), numSamples)
+        lped=np.interp(sample, np.linspace(0, len(templped), len(templped+1)), templped) 
+    else :
+        lped = butter_lowpass_filter(rawg, cutoff, sr, order)[-numSamples:]
+    #now map to desired range
+    lpedmin=np.amin(lped)
+    lpedmax=np.amax(lped)
+    mapped = ymin+np.divide(lped-lpedmin,lpedmax-lpedmin)*(ymax-ymin)
+    print(f'mapped.min is {np.amin(mapped)} and mapped.max is {np.amax(mapped)}')
+    return mapped
+ 
+    
+def butter_lowpass(cutoff, sr, order=5):
+    nyq = 0.5 * sr
+    normal_cutoff = cutoff / nyq
+    b, a = butter(order, normal_cutoff, btype='low', analog=False)
+    return b, a
+
+def butter_lowpass_filter(data, cutoff, sr, order=5):
+    b, a = butter_lowpass(cutoff, sr, order=order)
+    y = lfilter(b, a, data)
+    return y
+
+#########################################
+def mvsnd(snd,distance,sr) :
+    ''' 
+    Takes a sound and a distance (meters) array and returns a new sound array 
+    with doppler and amplitude shifts. A distance of 0 will produce no amplitude shift, and amplitude falls off with the square of the distance.
+    '''
+    #get velocity in meters my taking the difference between two successive points
+    rvel=np.diff(-distance, prepend=distance[0])*sr/330 # meters per second
+    # create array of real-valued indices for sampling sound (takes bigger steps for higher velocity)
+    sample = np.cumsum(rvel+1) 
+    #if rvel is negative, shift samples so we always start reading at the beginning of the snd
+    if sample[0] < 0 :  
+        sample=sample-sample[0]
+    if sample[-1] > len(snd) :
+        print(f'WARNING: numsamples in snd is {len(snd)}, and the last doppler shifted sample we require is {sample[-1]}. Consider making your snd array a little longer than distance to be sure to have enough for when the average velocity is positive.')
+    dopplershifted = np.interp(sample, np.linspace(0, len(snd), len(snd+1)), snd) 
+    ampscale=1+np.square(distance)
+    return np.divide(dopplershifted, ampscale)
+
+#########################################
