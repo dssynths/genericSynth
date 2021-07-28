@@ -267,6 +267,10 @@ def gwindow(m) :
     '''
     return windows.gaussian(m,m/6)
 
+def expWindow(dur, attack_s=0.005, decay_s=0.005, tscale=3, sr=44100) :
+    tarray=np.linspace(0,dur, int(dur*sr), endpoint=True)
+    return [expdecay(t, dur, attack_s, decay_s, tscale) for t in tarray]
+
 def expdecay(t, dur, attack_s=0, decay_s=0, tscale=3) :
     '''
     Exponential decay window
