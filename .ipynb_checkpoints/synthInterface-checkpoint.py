@@ -6,7 +6,7 @@ from scipy.signal import butter, lfilter, sawtooth, windows
 from numpy.random import seed
 
 dssynthseed=18005551212 #default
-dssynthsr=44100 #default
+dssynthsr=44100 synthInterface.py
 
 class MyParam():
     '''
