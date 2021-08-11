@@ -5,8 +5,8 @@ from scipy.signal import butter, lfilter, sawtooth, windows
 
 from numpy.random import seed
 
-dssynthseed=18005551212
-dssynthsr=16000
+dssynthseed=18005551212 #default
+dssynthsr=44100 synthInterface.py
 
 class MyParam():
     '''
@@ -37,16 +37,17 @@ class MySoundModel() :
     '''
         @rngseed - If None, will use random seed
     '''
-    def __init__(self,sr=dssynthsr, rngseed=dssynthseed) :
+    def __init__(self,sr=dssynthsr, rngseed=dssynthseed, verbose=False) :
         self.param = {} # a dictionary of MyParams
         self.sr = sr 
         self.rng = np.random.default_rng(rngseed)
-        if rngseed==None :
-            print(f"{self.__class__.__name__} creating rng with random seed")
-        elif rngseed==dssynthseed :
-            print(f"{self.__class__.__name__} creating rng with default seed")
-        else :
-            print(f"{self.__class__.__name__} creating rng with user seed") 
+        if verbose : 
+            if rngseed==None :
+                print(f"{self.__class__.__name__} creating rng with random seed")
+            elif rngseed==dssynthseed :
+                print(f"{self.__class__.__name__} creating rng with default seed")
+            else :
+                print(f"{self.__class__.__name__} creating rng with user seed") 
 
 
 
@@ -159,7 +160,6 @@ def noisySpacingTimeList(rate_exp, irreg_exp, durationSecs,  rngseed, verbose=Fa
     # mapping to the right range units
     eps=np.power(2.,rate_exp)
     irregularity=.1*irreg_exp*np.power(10,irreg_exp)
-    #irregularity=.04*np.power(10,irreg_exp)
     sd=irregularity/eps
 
     linspacesteps=int(eps*durationSecs)
