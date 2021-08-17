@@ -8,7 +8,7 @@ from numpy.random import seed
 dssynthseed=18005551212 #default
 dssynthsr=44100 #default
 
-class MyParam():
+class DSParam():
     '''
         Provides API for parameter creation, getting, setting
         @cb - a callback function to execute when the parameter changes.
@@ -33,12 +33,12 @@ class MyParam():
     A model has parameters, methods to get/set them, and a generate function that returns a signal.
     This is *the* interface for all synths.
 '''
-class MySoundModel() :
+class DSSoundModel() :
     '''
         @rngseed - If None, will use random seed
     '''
     def __init__(self,sr=dssynthsr, rngseed=dssynthseed, verbose=False) :
-        self.param = {} # a dictionary of MyParams
+        self.param = {} # a dictionary of DSParams
         self.sr = sr 
         self.rng = np.random.default_rng(rngseed)
         if verbose : 
@@ -52,7 +52,7 @@ class MySoundModel() :
 
 
     def __addParam__(self, name,min,max,val, cb=None, synth_doc="") :
-        self.param[name]=MyParam(name,min,max,val, cb, synth_doc)
+        self.param[name]=DSParam(name,min,max,val, cb, synth_doc)
 
 
     def setParam(self, name, value) :
@@ -118,12 +118,12 @@ class MySoundModel() :
     The factory takes an optional argument for a list of amplitudes that, if used, must be the same length as the models list.
     The generate function takes a spreadSecs argument that lest you spread out start times evenly over an interval.
 '''
-class DSEnsemble(MySoundModel) : 
+class DSEnsemble(DSSoundModel) : 
     '''
         @rngseed - If None, will use random seed
     '''
     def __init__(self,  models=[], amp=[], sr=dssynthsr, rngseed=dssynthseed) :
-        MySoundModel.__init__(self, sr=dssynthsr, rngseed=dssynthseed)
+        DSSoundModel.__init__(self, sr=dssynthsr, rngseed=dssynthseed)
         self.numModels= len(models)
         self.models=models
         if len(amp) != len(models) :
