@@ -48,6 +48,8 @@ class DSSoundModel() :
                 print(f"{self.__class__.__name__} creating rng with default seed")
             else :
                 print(f"{self.__class__.__name__} creating rng with user seed") 
+                
+            print(f"{self.__class__.__name__} initializing with sr={sr}")
 
 
 
