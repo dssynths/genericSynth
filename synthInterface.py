@@ -257,7 +257,7 @@ def bkpoint(y,s) :
     return sig
 
 
-def env(self, sigLenSecs, sr, attack=0.005, decay=0.005) : 
+def env(sigLenSecs, sr, attack=0.005, decay=0.005) : 
     '''
         env(sigLenSecs, attack=0.005, decay=0.005)
         envelope with a linear attack and decay specified in seconds
@@ -267,7 +267,7 @@ def env(self, sigLenSecs, sr, attack=0.005, decay=0.005) :
     ltrans2 = min(length-ltrans1-1, round(min(decay*sr, length/2)))  # -1 for the zero point we add at the end of bkpoint
     mids=max(0, length-(ltrans1+ltrans2)-1)
     #print(f"calling bkpoint with ltrans1={ltrans1}, ltrans1={ltrans2},midms={midms}")
-    return np.array(SI.bkpoint([0,1,1,0,0],[ltrans1,mids,ltrans2,1]))
+    return np.array(bkpoint([0,1,1,0,0],[ltrans1,mids,ltrans2,1]))
 
 
 def oct2freq(octs, bf=440.) :
