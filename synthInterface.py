@@ -41,15 +41,16 @@ class DSSoundModel() :
         self.param = {} # a dictionary of DSParams
         self.sr = sr 
         self.rng = np.random.default_rng(rngseed)
+        self.verbose=verbose
         if verbose : 
             if rngseed==None :
-                print(f"{self.__class__.__name__} creating rng with random seed")
+                print(f"{self.__class__.__name__} created rng with random seed")
             elif rngseed==dssynthseed :
-                print(f"{self.__class__.__name__} creating rng with default seed")
+                print(f"{self.__class__.__name__} created rng with default seed")
             else :
-                print(f"{self.__class__.__name__} creating rng with user seed") 
+                print(f"{self.__class__.__name__} created rng with user seed") 
                 
-            print(f"{self.__class__.__name__} initializing with sr={sr}")
+            print(f"{self.__class__.__name__} initialized with sr={sr}")
 
 
 
@@ -254,6 +255,20 @@ def bkpoint(y,s) :
     for j in range(len(y)-1) :
         sig=np.concatenate((sig, np.linspace(y[j], y[j+1], s[j], False)), 0)
     return sig
+
+
+def env(self, sigLenSecs, sr, attack=0.005, decay=0.005) : 
+    '''
+        env(sigLenSecs, attack=0.005, decay=0.005)
+        envelope with a linear attack and decay specified in seconds
+    '''
+    length = int(round(sigLenSecs*sr))   # in samples
+    ltrans1 = round(min(attack*sr, length/2)) #in samples
+    ltrans2 = min(length-ltrans1-1, round(min(decay*sr, length/2)))  # -1 for the zero point we add at the end of bkpoint
+    mids=max(0, length-(ltrans1+ltrans2)-1)
+    #print(f"calling bkpoint with ltrans1={ltrans1}, ltrans1={ltrans2},midms={midms}")
+    return np.array(SI.bkpoint([0,1,1,0,0],[ltrans1,mids,ltrans2,1]))
+
 
 def oct2freq(octs, bf=440.) :
     return bf * np.power(2,octs)
