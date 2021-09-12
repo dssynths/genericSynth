@@ -154,19 +154,16 @@ creates a list of event times that happen with a rate of 2^r_exp
 
       @rngseed - If None, will use random seed
       @irreg_exp - [0-1] -> (as power of 10) to standard deviation in [0,1] normalized by event spacing; 0 is regular, 1 sounds uniformly random
-      @phase - delay = phase/(2^rate_exp); delay is some proportion of average event period
       @wrap - mode by duration so that anything that fell off either end is wrapped back in to [0,durationSecs]
-      @roll - shift all events so that first one starts at time 0 
-      
+      @roll - shift all events so that first one starts at time 0
 '''
-def noisySpacingTimeList(rate_exp, irreg_exp, durationSecs,  rngseed, verbose=False, phase=0, wrap=True, roll=False) :
+def noisySpacingTimeList(rate_exp, irreg_exp, durationSecs,  rngseed, verbose=False, wrap=True, roll=False) :
     rng = np.random.default_rng(seed=rngseed)
 
     # mapping to the right range units
     eps=np.power(2.,rate_exp)
     irregularity=.1*irreg_exp*np.power(10,irreg_exp)
     sd=irregularity/eps
-    
 
     linspacesteps=int(eps*durationSecs)
     linspacedur = linspacesteps/eps
@@ -174,20 +171,17 @@ def noisySpacingTimeList(rate_exp, irreg_exp, durationSecs,  rngseed, verbose=Fa
     if verbose :
         print(f'noisySpacingTimeList: eps is {eps}, sd = {sd}, linspacesteps is {linspacesteps}, linspacedur is {linspacedur}')
 
-    eventtimes=[(x+rng.normal(scale=sd))%durationSecs for x in np.linspace(0, linspacedur, linspacesteps, endpoint=False)]
+    # Here we add a step, and include the endpoint keeping spacing at the correct value. Generally, durationSecs > lispacedur, so it makes sense to include the endpoint. Add an envelope if you need to.
+    eventtimes=[(x+rng.normal(scale=sd))%durationSecs for x in np.linspace(0, linspacedur, linspacesteps+1, endpoint=True)]
 
     if verbose :
         print(f'noisySpacingTimeList: (BEFORE wrapped, rolled) eventtimes =  {eventtimes}')
 
-    if len(eventtimes) > 0 :
-        if wrap :
-            eventtimes=np.sort(np.mod(eventtimes, durationSecs))
-        if roll :
-            eventtimes=eventtimes-np.min(eventtimes)
 
-        #phase delay after roll
-        delay=phase/eps; 
-        eventtimes=eventtimes+delay; #
+    if wrap :
+        eventtimes=np.sort(np.mod(eventtimes, durationSecs))
+    if roll :
+        eventtimes=eventtimes-np.min(eventtimes)
 
     if verbose :
         print(f'noisySpacingTimeList: (wrapped, rolled) eventtimes =  {eventtimes}')
