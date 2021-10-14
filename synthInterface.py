@@ -133,15 +133,20 @@ class DSEnsemble(DSSoundModel) :
             print(f'will use uniform amplitudes unless len(amps) == len(models)')
             amp=np.ones(len(models))*.6
         self.amp=amp
+        self.sr=sr
 
-    def generate(self,  durationSecs, spreadSecs=1) :
+    #spreadSecs was a bad idea, but for backwards compatibility......
+    def generate(self,  durationSecs, spreadSecs=0, verbose=False) :
         numSamples=int(self.sr*durationSecs)
-        spreadsamples=int(self.sr*spreadSecs)
-        
+        if spreadSecs==0 :
+            spreadsamples=0
+        else :
+            spreadsamples=self.rng.integers(0,int(self.sr*spreadSecs))    
+                  
         sig=np.zeros(numSamples+spreadsamples)
         for i in range (self.numModels) :
             gensig = self.amp[i]*self.models[i].generate(durationSecs) 
-            sig = addin(gensig, sig, self.rng.integers(0,spreadsamples)) 
+            sig = addin(gensig, sig, spreadsamples) 
         return sig[:numSamples]
 
 
@@ -154,10 +159,11 @@ creates a list of event times that happen with a rate of 2^r_exp
 
       @rngseed - If None, will use random seed
       @irreg_exp - [0-1] -> (as power of 10) to standard deviation in [0,1] normalized by event spacing; 0 is regular, 1 sounds uniformly random
+      @phase - None randomizes, a number shifts the event list by [0-1]/eps seconds (prior to wrap and roll)
       @wrap - mode by duration so that anything that fell off either end is wrapped back in to [0,durationSecs]
-      @roll - shift all events so that first one starts at time 0
+      @roll - shift all events so that first one starts at time 0 (and phase parameter becomes irrelevant) 
 '''
-def noisySpacingTimeList(rate_exp, irreg_exp, durationSecs,  rngseed, verbose=False, wrap=True, roll=False) :
+def noisySpacingTimeList(rate_exp, irreg_exp, durationSecs,  rngseed, phase=None, verbose=False, wrap=True, roll=False) :
     rng = np.random.default_rng(seed=rngseed)
 
     # mapping to the right range units
@@ -169,14 +175,19 @@ def noisySpacingTimeList(rate_exp, irreg_exp, durationSecs,  rngseed, verbose=Fa
     linspacedur = linspacesteps/eps
 
     if verbose :
-        print(f'noisySpacingTimeList: eps is {eps}, sd = {sd}, linspacesteps is {linspacesteps}, linspacedur is {linspacedur}')
+        print(f'noisySpacingTimeList: rate_exp is {rate_exp}, eps is {eps}, sd = {sd}, linspacesteps is {linspacesteps}, linspacedur is {linspacedur}')
 
-    # Here we add a step, and include the endpoint keeping spacing at the correct value. Generally, durationSecs > lispacedur, so it makes sense to include the endpoint. Add an envelope if you need to.
-    eventtimes=[(x+rng.normal(scale=sd))%durationSecs for x in np.linspace(0, linspacedur, linspacesteps+1, endpoint=True)]
+    eventtimes=[(x+rng.normal(scale=sd))%durationSecs for x in np.linspace(0, linspacedur, linspacesteps, endpoint=False)]
 
     if verbose :
+        print(f'noisySpacingTimeList: have {len(eventtimes)} over {durationSecs} for an average of {len(eventtimes)}/{durationSecs} eps')
         print(f'noisySpacingTimeList: (BEFORE wrapped, rolled) eventtimes =  {eventtimes}')
 
+    if phase==None :
+        phase=rng.random()
+        if verbose :
+            print(f'  noisySpacingTimeList:  phase is randomly set to {phase}')
+    eventtimes = eventtimes + phase/eps
 
     if wrap :
         eventtimes=np.sort(np.mod(eventtimes, durationSecs))
@@ -285,7 +296,7 @@ def gwindow(m) :
     '''
     return windows.gaussian(m,m/6)
 
-def expWindow(dur, attack_s=0.005, decay_s=0.005, tscale=3, sr=44100) :
+def expWindow(dur, attack_s=0.005, decay_s=0.005, tscale=3, sr=dssynthsr) :
     tarray=np.linspace(0,dur, int(dur*sr), endpoint=True)
     return [expdecay(t, dur, attack_s, decay_s, tscale) for t in tarray]
 
@@ -347,6 +358,15 @@ def butter_lowpass_filter(data, cutoff, sr, order=5):
     b, a = butter_lowpass(cutoff, sr, order=order)
     y = lfilter(b, a, data)
     return y
+
+
+def map(x, a, b, m, n, clipped=True):
+    scaled = float(x - a) / float(b - a)
+    extmap = m + (scaled * (n - m))
+    if clipped :
+        return min(n, max(m,extmap))
+    else :
+        return extmap
 
 #########################################
 def mvsnd(snd,distance,sr) :
