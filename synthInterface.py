@@ -52,12 +52,24 @@ class DSSoundModel() :
                 
             print(f"{self.__class__.__name__} initialized with sr={sr}")
 
-
-
+    # -----------------------vv param interface vv-------------------------------------#
+    # Create a parameter with an API for your DSSynth
     def __addParam__(self, name,min,max,val, cb=None, synth_doc="") :
         self.param[name]=DSParam(name,min,max,val, cb, synth_doc)
 
+    # expose a parameter from another DSSynth as your own.
+    def __addChildParam__(self, child, childParamName, val=None, newname=None, cb=None, synth_doc=None) :
+        nombre=newname or child.getParam(childParam, "name")
+        print(f'adding parameter with name {nombre}')
+        self.__addParam__(nombre, 
+            child.getParam(childParamName, "min"), 
+            child.getParam(childParamName, "max"), 
+            val or child.getParam(childParamName, "val"), 
+            cb= cb or (lambda v :
+                child.setParam(childParamName, v)), #self.getParam(nombre)), 
+            synth_doc=synth_doc or child.getParam(childParamName,  "synth_doc"))
 
+    ''' just set parameter to a value '''
     def setParam(self, name, value) :
         self.param[name].val=value
         if self.param[name].cb is not None :
@@ -92,6 +104,7 @@ class DSSoundModel() :
         for p in self.param :
             plist.append(self.param[p].name)
         return plist
+    # -----------------------^^ param interface ^^-------------------------------------#
 
     '''
         override this for your signal generation
