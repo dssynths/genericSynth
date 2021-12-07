@@ -60,7 +60,6 @@ class DSSoundModel() :
     # expose a parameter from another DSSynth as your own.
     def __addChildParam__(self, child, childParamName, val=None, newname=None, cb=None, synth_doc=None) :
         nombre=newname or child.getParam(childParam, "name")
-        print(f'adding parameter with name {nombre}')
         self.__addParam__(nombre, 
             child.getParam(childParamName, "min"), 
             child.getParam(childParamName, "max"), 
@@ -123,7 +122,7 @@ class DSSoundModel() :
     def printParams(self):
         paramVals = self.paramProps()
         for params in paramVals:
-            print( "Name: ", params.name, " Current value : ", params.val, ", Min value ", params.min, ", Max value ", params.max,  ", synth_doc: ", params.synth_doc )
+            print(f"Name: {params.name}, Current val: {params.val:.3f}, Min val: {params.min}, Max val: {params.max}, synth_doc: {params.synth_doc}")
 
 ##################################################################################################
 # A Ensemble class for playing a bunch of DSSynth models together
@@ -166,17 +165,15 @@ class DSEnsemble(DSSoundModel) :
 ##################################################################################################
 # A couple of handy-dandy UTILITY FUNCTIONS for event pattern synthesizers in particular
 ##################################################################################################
-'''
-creates a list of event times that happen with a rate of 2^r_exp
-      and deviate from the strict equal space according to irreg_exp
 
-      @rngseed - If None, will use random seed
-      @irreg_exp - [0-1] -> (as power of 10) to standard deviation in [0,1] normalized by event spacing; 0 is regular, 1 sounds uniformly random
-      @phase - None randomizes, a number shifts the event list by [0-1]/eps seconds (prior to wrap and roll)
-      @wrap - mode by duration so that anything that fell off either end is wrapped back in to [0,durationSecs]
-      @roll - shift all events so that first one starts at time 0 (and phase parameter becomes irrelevant) 
-'''
 def noisySpacingTimeList(rate_exp, irreg_exp, durationSecs,  rngseed, phase=None, verbose=False, wrap=True, roll=False) :
+    '''
+    creates a list of event times that happen with a rate of 2^r_exp and deviate from the strict equal space according to irreg_exp
+
+    @phase - None randomizes, a number shifts the event list by [0-1]/eps seconds (prior to wrap and roll)
+    @wrap - mode by duration so that anything that fell off either end is wrapped back in to [0,durationSecs]
+    @roll - shift all events so that first one starts at time 0 (and phase parameter becomes irrelevant) 
+    '''
     rng = np.random.default_rng(seed=rngseed)
 
     # mapping to the right range units
@@ -240,36 +237,30 @@ def selectVariation(sig, sr, varNum, varDurationSecs):
         return sig[varNum*variationSamples:(varNum+1)*variationSamples]
 
 
-'''Gestures are transformation function specifying changes about an aspect of a
-sound over time. Used for creating amplitude envelopes or frequency sweeps.'''
+def extendEventSequence(oseq, seqDur, durationSecs) :
+    ''' 
+    # Exend an event (time) list by concatenating the sequence with seDur added to the events in each successive repeat.
+    # @ oseq - original list of times
+    # @ seqDur - the duration of each revolution through the oseq
+    # @ durationSecs - keep cycling through oseq to create the looped seq while less than durationSecs
+    '''
+    cyclelength=len(oseq)
+    newEvList=[]
+    newEvNum=0
+    revNum=0
+    revSeqEvNum=0
+    t=oseq[revSeqEvNum]
+    # Cycle through oseq events incrementing time while less than requested duration
+    while t < durationSecs :
+            newEvList.append(t)
+            # now get the next one
+            newEvNum=newEvNum+1
+            revNum=newEvNum//cyclelength
+            revSeqEvNum=newEvNum%cyclelength
+            t=oseq[revSeqEvNum]+revNum*seqDur
+    return newEvList
 
-'''Linearly interpolates from start to stop val
-   Startval: Float, int
-   Stopval: Float, int
-''' 
-def gesture(startVal, stopVal, cutOff, numSamples):
-        gesture = np.zeros(numSamples)
-        non_zero = np.linspace(startVal, stopVal, int(cutOff*numSamples))
-        for index in range(len(non_zero)):
-                gesture[index] = non_zero[index]
-        return gesture
 
-'''Generic gesture creates 2 linear interpolations.'''
-''' Startval: Float, int
-    Stopval: Float, int 
-    2 interpolations: Start to stop, and stop to start
-'''
-def genericGesture(startVal, stopVal, cutOff, numSamples):
-        gesture = np.zeros(numSamples)
-        ascending = np.linspace(startVal, stopVal, int(cutOff*numSamples))
-        descending = np.linspace(stopVal, startVal, numSamples - int(cutOff*numSamples))
-        
-        for index in range(len(ascending)):
-            gesture[index] = ascending[index]
-        for index in range(len(descending)):
-            gesture[index+len(ascending)] = descending[index]
-
-        return gesture
 
 ''' Create an array comprised of linear segments between breakpoints '''
 # y - list of values
@@ -401,3 +392,35 @@ def mvsnd(snd,distance,sr) :
     return np.divide(dopplershifted, ampscale)
 
 #########################################
+'''Gestures are transformation function specifying changes about an aspect of a
+sound over time. Used for creating amplitude envelopes or frequency sweeps.'''
+
+
+
+'''Linearly interpolates from start to stop val
+   Startval: Float, int
+   Stopval: Float, int
+''' 
+def gesture(startVal, stopVal, cutOff, numSamples):
+        gesture = np.zeros(numSamples)
+        non_zero = np.linspace(startVal, stopVal, int(cutOff*numSamples))
+        for index in range(len(non_zero)):
+                gesture[index] = non_zero[index]
+        return gesture
+
+'''Generic gesture creates 2 linear interpolations.'''
+''' Startval: Float, int
+    Stopval: Float, int 
+    2 interpolations: Start to stop, and stop to start
+'''
+def genericGesture(startVal, stopVal, cutOff, numSamples):
+        gesture = np.zeros(numSamples)
+        ascending = np.linspace(startVal, stopVal, int(cutOff*numSamples))
+        descending = np.linspace(stopVal, startVal, numSamples - int(cutOff*numSamples))
+        
+        for index in range(len(ascending)):
+            gesture[index] = ascending[index]
+        for index in range(len(descending)):
+            gesture[index+len(ascending)] = descending[index]
+
+        return gesture
