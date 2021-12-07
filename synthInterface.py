@@ -231,10 +231,6 @@ def addin(a,b,startsamp) :
     b[startsamp:startsamp+len(a)]=[sum(x) for x in zip(b[startsamp:startsamp+len(a)], a)]
     return b
 
-''' Returns a chunked wav files from generated signal '''
-def selectVariation(sig, sr, varNum, varDurationSecs):
-        variationSamples=math.floor(sr*varDurationSecs)
-        return sig[varNum*variationSamples:(varNum+1)*variationSamples]
 
 
 def extendEventSequence(oseq, seqDur, durationSecs) :
