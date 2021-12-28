@@ -2,6 +2,7 @@
 import numpy as np
 import math
 from scipy.signal import butter, lfilter, sawtooth, windows
+from opensimplex import OpenSimplex
 
 from numpy.random import seed
 
@@ -138,7 +139,7 @@ class DSEnsemble(DSSoundModel) :
         @rngseed - If None, will use random seed
     '''
     def __init__(self,  models=[], amp=[], sr=dssynthsr, rngseed=dssynthseed) :
-        DSSoundModel.__init__(self, sr=dssynthsr, rngseed=dssynthseed)
+        DSSoundModel.__init__(self, sr=sr, rngseed=dssynthseed)
         self.numModels= len(models)
         self.models=models
         if len(amp) != len(models) :
@@ -150,6 +151,7 @@ class DSEnsemble(DSSoundModel) :
     #spreadSecs was a bad idea, but for backwards compatibility......
     def generate(self,  durationSecs, spreadSecs=0, verbose=False) :
         numSamples=int(self.sr*durationSecs)
+        print(f'Ensemble.generate with {self.sr=} and  {durationSecs=} will compute {numSamples=}')
         if spreadSecs==0 :
             spreadsamples=0
         else :
@@ -314,6 +316,28 @@ def expdecay(t, dur, attack_s=0, decay_s=0, tscale=3) :
     if (decay_s!=0 and t>(dur-decay_s)) : scale=(dur-t)/decay_s
     return scale*np.exp(-tscale*t/(dur))
 #########################################
+# https://pypi.org/project/opensimplex/
+def simplex(numsamples, freq, sr, octaveWeights=[1], ymin=-1, ymax=1, rngseed=dssynthseed, verbose=False) :
+    ''' Uses OpenSimplex to create noise in the range ymin to ymax 
+    @freq - number of bumps per second
+    @sr - samplerate
+    @octaveWeights - array of weghtings for summing simplex noise at oct*freq
+    @ ymin, ymax - map simplex range [-1,1] to [ymin, ymax]
+    '''
+    s=int(rngseed/1000)
+    if verbose : 
+        print(f'simplex: {s=}')
+    simplex=OpenSimplex(seed=s)
+    freq=max(freq,0.0000001)
+    feature_size=sr/freq
+    sig=np.zeros((numsamples))
+    for n in range(numsamples) :
+        for oct in range(len(octaveWeights)) :
+            sig[n]=sig[n]+octaveWeights[oct]*simplex.noise2d(n / feature_size, 1)
+
+    sig=ymin+.5*(sig+1)*(ymax-ymin)
+    return sig
+
 
 def randomLPContour(numSamples, cutoff, sr, rngseed, order=5,  ymin=0, ymax=1) :
     '''
@@ -333,31 +357,35 @@ def randomLPContour(numSamples, cutoff, sr, rngseed, order=5,  ymin=0, ymax=1) :
     # lp filter to smooth the motion
     critical_cutoff_val=10.
     if cutoff < critical_cutoff_val :
-        print('WARNING, cutoff below critical cutoff value of {critical_cutoff_val} Hz, using resampling hack to get lower frequency')
+        print('randomLPContour: Just so ya know, cutoff below critical cutoff value of {critical_cutoff_val} Hz, using resampling hack to get proper lower frequency behavior')
         rsampfactor = critical_cutoff_val/cutoff
-        templped = butter_lowpass_filter(rawg, critical_cutoff_val, sr, order)[-numSamples:]
+        #templped = butter_lowpass_filter(rawg, critical_cutoff_val, sr, order)[-numSamples:]
+        templped = butter_filter(rawg, critical_cutoff_val, sr, 'low', order)[-numSamples:]
         sample=np.linspace(0,int(numSamples/rsampfactor), numSamples)
         lped=np.interp(sample, np.linspace(0, len(templped), len(templped+1)), templped) 
     else :
-        lped = butter_lowpass_filter(rawg, cutoff, sr, order)[-numSamples:]
+        #lped = butter_lowpass_filter(rawg, cutoff, sr, order)[-numSamples:]
+        lped = butter_filter(rawg, cutoff, sr, 'low', order)[-numSamples:]
     #now map to desired range
     lpedmin=np.amin(lped)
     lpedmax=np.amax(lped)
     mapped = ymin+np.divide(lped-lpedmin,lpedmax-lpedmin)*(ymax-ymin)
-    print(f'mapped.min is {np.amin(mapped)} and mapped.max is {np.amax(mapped)}')
+    print(f'ymax i {ymax}, and mapped.min is {np.amin(mapped)} and mapped.max is {np.amax(mapped)}')
     return mapped
  
-    
-def butter_lowpass(cutoff, sr, order=5):
+
+def butter_filter(data, cutoff, sr, btype, order=5):
+    ''' @data - array
+        @cuttoff - in hz
+        @sr
+        @btype - {‘lowpass’, ‘highpass’, ‘bandpass’, ‘bandstop’}
+        @order - default 5
+    '''
     nyq = 0.5 * sr
     normal_cutoff = cutoff / nyq
-    b, a = butter(order, normal_cutoff, btype='low', analog=False)
-    return b, a
+    b, a = butter(order, normal_cutoff, btype=btype, analog=False)
+    return lfilter(b, a, data)
 
-def butter_lowpass_filter(data, cutoff, sr, order=5):
-    b, a = butter_lowpass(cutoff, sr, order=order)
-    y = lfilter(b, a, data)
-    return y
 
 
 def map(x, a, b, m, n, clipped=True):
@@ -369,6 +397,7 @@ def map(x, a, b, m, n, clipped=True):
         return extmap
 
 #########################################
+# the number of samples returned will be less than the length of snd 
 def mvsnd(snd,distance,sr) :
     ''' 
     Takes a sound and a distance (meters) array and returns a new sound array 
@@ -383,7 +412,10 @@ def mvsnd(snd,distance,sr) :
         sample=sample-sample[0]
     if sample[-1] > len(snd) :
         print(f'WARNING: numsamples in snd is {len(snd)}, and the last doppler shifted sample we require is {sample[-1]}. Consider making your snd array a little longer than distance to be sure to have enough for when the average velocity is positive.')
+    
+
     dopplershifted = np.interp(sample, np.linspace(0, len(snd), len(snd+1)), snd) 
+
     ampscale=1+np.square(distance)
     return np.divide(dopplershifted, ampscale)
 
