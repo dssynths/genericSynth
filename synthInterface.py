@@ -333,7 +333,7 @@ def simplex(numsamples, freq, sr, octaveWeights=[1], ymin=-1, ymax=1, rngseed=ds
     sig=np.zeros((numsamples))
     for n in range(numsamples) :
         for oct in range(len(octaveWeights)) :
-            sig[n]=sig[n]+octaveWeights[oct]*simplex.noise2d(n / feature_size, 1)
+            sig[n]=sig[n]+octaveWeights[oct]*simplex.noise2(n / feature_size, 1)
 
     sig=ymin+.5*(sig+1)*(ymax-ymin)
     return sig
