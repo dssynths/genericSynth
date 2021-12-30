@@ -60,7 +60,7 @@ class DSSoundModel() :
 
     # expose a parameter from another DSSynth as your own.
     def __addChildParam__(self, child, childParamName, val=None, newname=None, cb=None, synth_doc=None) :
-        nombre=newname or child.getParam(childParam, "name")
+        nombre=newname or childParamName #child.getParam(childParam, "name")
         self.__addParam__(nombre, 
             child.getParam(childParamName, "min"), 
             child.getParam(childParamName, "max"), 
@@ -151,7 +151,8 @@ class DSEnsemble(DSSoundModel) :
     #spreadSecs was a bad idea, but for backwards compatibility......
     def generate(self,  durationSecs, spreadSecs=0, verbose=False) :
         numSamples=int(self.sr*durationSecs)
-        print(f'Ensemble.generate with {self.sr=} and  {durationSecs=} will compute {numSamples=}')
+        if verbose :
+            print(f'Ensemble.generate with {self.sr=} and  {durationSecs=} will compute {numSamples=}')
         if spreadSecs==0 :
             spreadsamples=0
         else :
