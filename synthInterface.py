@@ -330,10 +330,10 @@ def simplex(numsamples, freq, sr, octaveWeights=[1], ymin=-1, ymax=1, rngseed=ds
         print(f'simplex: {s=}')
     simplex=OpenSimplex(seed=s)
     freq=max(freq,0.0000001)
-    feature_size=sr/freq
     sig=np.zeros((numsamples))
     for n in range(numsamples) :
         for oct in range(len(octaveWeights)) :
+            feature_size=sr/(freq*2**oct)
             sig[n]=sig[n]+octaveWeights[oct]*simplex.noise2(n / feature_size, 1)
 
     sig=ymin+.5*(sig+1)*(ymax-ymin)
@@ -453,3 +453,178 @@ def genericGesture(startVal, stopVal, cutOff, numSamples):
             gesture[index+len(ascending)] = descending[index]
 
         return gesture
+
+##################################################################
+#  For time-varying filters
+##################################################################
+#  ========================================================
+#   AllPass
+#               original c++ code by Gerry Beauregard
+#  ========================================================
+#   Second order lattice all-pass filter, as described in
+#   Jon Dattorro's "DSP Music Toolbox Part 1", AES Journal
+#   1997 September Volume 45 Number 9.
+#
+#   This filter is not particularly useful by itself, but
+#   it serves as the basis for notch, resonator, cut and
+#   boost filters described in the same article.
+#
+#   The all-pass lattice's transfer function is:
+#
+#                   B + Y(1+B)zm2 + zm2             
+#       A(z)    =   --------------------
+#                   1 + Y(1+B)zm1 + Bzm2
+#
+#       "B"   is "beta"
+#       "Y"   is "gamma"
+#       "zm1" is "z to the power -1"    
+#
+#   The implementation of a similar lattice is described
+#   in Oppenheim & Schafer "Discrete-Time Signal Processing"
+#   on p322.  The resulting difference equations are:
+#       
+#       e2[n] = y;
+#       e1[n] = e2[n] - B et1[n]
+#       e0[n] = e1[n] - Y et0[n]
+#
+#       et2[n] = B e1[n] + et1[n-1]
+#       et1[n] = Y e0[n] + et0[n-1]
+#       et0[n] = e0[n]
+#
+#       y[n] = et2[n]
+#
+#       "et" is e with a tilde on top (as per O&S's notation).
+#       
+#   For stability, we must have |Y| < 1 and |B| < 1.
+#
+#   (Note: a very similar lattice can be used to implement
+#   an all pole filter filter.  The only difference is that
+#   the output y[n] is e0[n].  The all-pole lattice is 
+#   very useful for modelling speech production).
+#
+
+class AllPass(): 
+    def __init__(self, i_Y=0, i_B=0) :
+        self.m_et1=0
+        self.m_et0=0
+        self.m_Y=i_Y
+        self.m_B=i_B
+    
+    def setY(self, i_Y) :
+        assert i_Y < 1 and i_Y > -1
+        self.m_Y = i_Y
+        
+    def setB(self, i_B) :
+        i_B < 1 and i_B > -1
+        self.m_B = i_B
+    
+    def clear(self) :
+        self.m_et1=0
+        self.m_et0=0      
+
+    def tick(self, i_X ) :
+        e2 = i_X
+        e1 = e2 - self.m_B*self.m_et1
+        e0 = e1 - self.m_Y*self.m_et0
+
+        et2   = self.m_et1 + self.m_B*e1
+        self.m_et1 = self.m_et0 + self.m_Y*e0
+        self.m_et0 = e0
+
+        return et2
+
+#  ========================================================
+#   Resonator.cpp
+#  ========================================================
+#   2nd order resonator with independent control of 
+#   center frequency and Q.  From Jon Dattorro's "DSP Music 
+#   Toolbox Part 1", AES Journal 1997 September Vol 45 No 9.
+#
+#   The resonator uses the 2nd order all-pass filter
+#   described in the same article.
+#
+#   These are the filter's external parameters:
+#
+#       Fc      Center frequency (Hertz)
+#       Q       half-power excursion relative width
+#
+#   The transfer function for the resonator is
+#   
+#       H(z)    =   1/2 (1 - A(z))
+#
+#   Filling in the all-pole transfer function A(z) gives
+#
+#                      1/2(1-B)(1-zm2)
+#       H(z)    =   --------------------
+#                   1 + Y(1+B)zm1 + Bzm2
+#
+#   Read "B"   as "beta"
+#        "Y"   as "gamma"
+#        "zm1" as "z to the power -1"   
+#
+#   Y and B are computed as follows:
+#   
+#       Y   =   -cos(wc)
+#   
+#               1 - tan(wc/2Q)
+#       B   =   --------------
+#               1 + tan(wc/2Q)
+#
+#   where wc is the radian frequency (2*pi*Fc/SR)
+#   
+class Resonator() :
+    '''
+    2nd order resonator with independent control of 
+    center frequency and Q.  From Jon Dattorro's "DSP Music 
+    Toolbox Part 1", AES Journal 1997 September Vol 45 No 9.
+    
+    The resonator uses the 2nd order all-pass filter described in the same article (above).
+    '''
+    def __init__(self, i_SR, i_Gain = 1, i_Fc = 440, i_Q = 10) :
+        self.m_SR = i_SR
+        self.m_Gain = i_Gain   # Gain at center freq (dB)
+        self.m_Fc = i_Fc    #Center frequency (Hertz)
+        self.m_Q  = i_Q    # FC/BW
+        self.m_K  = i_Gain   # Linear gain at center frequency
+        self.m_AllPass = AllPass()  #All pass lattice filter
+        
+        self.set(i_Gain, i_Fc, i_Q)
+        self.m_AllPass.clear();
+        
+    def set(self, i_Gain, i_Fc, i_Q ) :
+        assert i_Fc > 0   # Peak cannot be at DC
+        assert  i_Fc < self.m_SR/2  # Must be less than the Nyquist frequency!
+        assert i_Q > 2*i_Fc/self.m_SR, f'{i_Q=} and {2*i_Fc/self.m_SR=}'# Minimum Q required for filter stability
+
+        self.m_Gain = i_Gain;
+        self.m_Fc   = i_Fc;
+        self.m_Q    = i_Q;
+
+        # Convert dB gain to absolute linear gain
+        self.m_K = i_Gain
+        wc = 2*np.pi*self.m_Fc/self.m_SR
+        b = (1-np.tan(wc/(2*self.m_Q))) / (1+np.tan(wc/(2*self.m_Q)))
+        y = -np.cos(wc)
+
+        self.m_AllPass.setB(b)
+        self.m_AllPass.setY(y)
+        
+    def tick(self, i_X ) :
+        x = i_X;
+        a = self.m_AllPass.tick(x);
+        y = self.m_K * 0.5 * (x-a);
+
+        return y;
+
+# --------------------
+# for your convenience  - provide arrays with the sample-by-sample filter values
+# sig, g, fc, q all arrays of the same length
+def tvBPfilter(sr, sig, g, fc, q) :
+    reson=Resonator(sr)
+    outsig=np.zeros((len(sig)))
+    
+    # update the filter coefs on every sample
+    for i in range(len(sig)) :
+        reson.set(g[i], fc[i], q[i])
+        outsig[i]= reson.tick(sig[i])
+    return outsig
