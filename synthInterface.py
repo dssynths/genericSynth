@@ -234,6 +234,15 @@ def addin(a,b,startsamp) :
     b[startsamp:startsamp+len(a)]=[sum(x) for x in zip(b[startsamp:startsamp+len(a)], a)]
     return b
 
+'''rewrites b from startsamps with a, fading b out at startsamps to avoid clicks'''
+def addinupdate(a,b,startsamp, xfade_samples) :
+    if (startsamp+xfade_samples) >= len(b) :
+        print(f'addinupdate warning: adding in a too close to end of b ..... skipping')
+        return b
+    env=np.array(bkpoint([1,1,0,0],[startsamp,xfade_samples,len(b)-(startsamp+xfade_samples)]))
+    b=b*env
+    addin(a,b,startsamp)
+    return b
 
 
 def extendEventSequence(oseq, seqDur, durationSecs) :
