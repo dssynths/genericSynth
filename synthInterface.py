@@ -136,7 +136,7 @@ class DSSoundModel() :
 '''
 class DSEnsemble(DSSoundModel) : 
     '''
-        @rngseed - If None, will use random seed
+        @rngseed - If None, will use system seed
     '''
     def __init__(self,  models=[], amp=[], sr=dssynthsr, rngseed=dssynthseed) :
         DSSoundModel.__init__(self, sr=sr, rngseed=dssynthseed)
@@ -149,7 +149,7 @@ class DSEnsemble(DSSoundModel) :
         self.sr=sr
 
     #spreadSecs was a bad idea, but for backwards compatibility......
-    def generate(self,  durationSecs, spreadSecs=0, verbose=False) :
+    def generate_old(self,  durationSecs, spreadSecs=0, verbose=False) :
         numSamples=int(self.sr*durationSecs)
         if verbose :
             print(f'Ensemble.generate with {self.sr=} and  {durationSecs=} will compute {numSamples=}')
@@ -164,18 +164,56 @@ class DSEnsemble(DSSoundModel) :
             sig = addin(gensig, sig, spreadsamples) 
         return sig[:numSamples]
 
+    
+    def generate(self,  durationSecs, spreadSecs=0, wrap=True, verbose=False) :
+        '''
+        @spreadSecs - start time of each model uniformly spread of spreadSecs.
+        @wrap - if a model has a start time other than 0 so that it goes beyond duration Secs, shift the samples after durationSecs back to the beginning
+        '''
+        numSamples=int(self.sr*durationSecs)
+        if verbose :
+            print(f'Ensemble.generate with {self.sr=} and  {durationSecs=} will compute {numSamples=}')
+        sig=np.zeros(numSamples)
+
+        for i in range (self.numModels) :
+            gensig = self.amp[i]*self.models[i].generate(durationSecs) 
+
+            if spreadSecs==0 :
+                sampleDelay=0
+            else :
+                sampleDelay=self.rng.integers(0,int(self.sr*spreadSecs))
+
+            if wrap and sampleDelay > 0:
+                if verbose :
+                    print(f'Ensemble model {i} rolling {sampleDelay} samples')
+                gensig=np.roll(gensig,sampleDelay)
+            else :
+                if verbose :
+                    print(f'Ensemble model {i} shifting {sampleDelay} samples')
+                gensig=np.concatenate((np.zeros(sampleDelay), gensig[sampleDelay:numSamples]))
+
+            sig = sig + gensig 
+
+        return sig[:numSamples]
+
+
 
 ##################################################################################################
 # A couple of handy-dandy UTILITY FUNCTIONS for event pattern synthesizers in particular
 ##################################################################################################
 
+
 def noisySpacingTimeList(rate_exp, irreg_exp, durationSecs,  rngseed, phase=None, verbose=False, wrap=True, roll=False) :
     '''
     creates a list of event times that happen with a rate of 2^r_exp and deviate from the strict equal space according to irreg_exp
 
-    @phase - None randomizes, a number shifts the event list by [0-1]/eps seconds (prior to wrap and roll)
-    @wrap - mode by duration so that anything that fell off either end is wrapped back in to [0,durationSecs]
-    @roll - shift all events so that first one starts at time 0 (and phase parameter becomes irrelevant) 
+    @rate_exp - eps (events per second) = 2^rate_exp
+    @irreg_exp - standard deviation around regular events = (.1*irreg_exp*np.power(10,irreg_exp))/eps
+    @durationSeconds
+    @rngseed - required, int of any size
+    @phase - in [0, 1], shift sequence by phase/eps , defaul: None (random)
+    @wrap - (boolean) any events that fall outsize of [0, durationSecs] are wrapped back in (default: True)
+    @roll - shift all events so that first one starts at time 0 (and phase parameter becomes irrelevant) (default: False) 
     '''
     rng = np.random.default_rng(seed=rngseed)
 
@@ -187,8 +225,8 @@ def noisySpacingTimeList(rate_exp, irreg_exp, durationSecs,  rngseed, phase=None
     linspacesteps=int(eps*durationSecs)
     linspacedur = linspacesteps/eps
 
-    if verbose :
-        print(f'noisySpacingTimeList: rate_exp is {rate_exp}, eps is {eps}, sd = {sd}, linspacesteps is {linspacesteps}, linspacedur is {linspacedur}')
+    #if verbose :
+    #    print(f'noisySpacingTimeList: rate_exp is {rate_exp}, eps is {eps}, sd = {sd}, linspacesteps is {linspacesteps}, linspacedur is {linspacedur}')
 
     eventtimes=[(x+rng.normal(scale=sd))%durationSecs for x in np.linspace(0, linspacedur, linspacesteps, endpoint=False)]
 
@@ -210,9 +248,56 @@ def noisySpacingTimeList(rate_exp, irreg_exp, durationSecs,  rngseed, phase=None
     if verbose :
         print(f'noisySpacingTimeList: (wrapped, rolled) eventtimes =  {eventtimes}')
 
-
     return eventtimes #sort because we "wrap around" any events that go off the edge of [0. durationSecs]
 
+
+def noisySpacingTimeList_v2(rate_exp, irreg_exp, durationSecs,  rngseed, phase=None, verbose=False, wrap=True, roll=False) :
+    '''
+    creates a list of event times that happen with a rate of 2^r_exp and deviate from the strict equal space according to irreg_exp
+
+    @rate_exp - eps (events per second) = 2^rate_exp
+    @irreg_exp - standard deviation around regular events = (.1*irreg_exp*np.power(10,irreg_exp))/eps
+    @durationSeconds
+    @rngseed - required, int of any size
+    @phase - in [0, 1], shift sequence by phase/eps , defaul: None (random)
+    @wrap - (boolean) any events that fall outsize of [0, durationSecs] are wrapped back in (default: True)
+    @roll - shift all events so that first one starts at time 0 (and phase parameter becomes irrelevant) (default: False) 
+    '''
+    rng = np.random.default_rng(seed=rngseed)
+
+    # mapping to the right range units
+    eps=np.power(2.,rate_exp)
+    irregularity=.1*irreg_exp*np.power(10,irreg_exp)
+    sd=irregularity/eps
+
+    adj_linspacesteps=int(np.ceil(eps*durationSecs)) #adjust duration to accomodate an interger number of events to get rate right
+    adj_linspacedur = adj_linspacesteps/eps
+
+    #if verbose :
+    #    print(f'noisySpacingTimeList: rate_exp is {rate_exp}, eps is {eps}, sd = {sd}, linspacesteps is {linspacesteps}, linspacedur is {linspacedur}')
+
+    eventtimes=[(x+rng.normal(scale=sd))%adj_linspacedur for x in np.linspace(0, adj_linspacedur, adj_linspacesteps, endpoint=False)]
+
+    if verbose :
+        print(f'noisySpacingTimeList: have {len(eventtimes)} over {adj_linspacedur} for an average of {len(eventtimes)}/{adj_linspacedur} eps')
+        print(f'noisySpacingTimeList: (BEFORE wrapped, rolled) eventtimes =  {eventtimes}')
+
+    if phase==None :
+        phase=rng.random()
+        if verbose :
+            print(f'  noisySpacingTimeList:  phase is randomly set to {phase}')
+    eventtimes = eventtimes + phase/eps
+
+    if wrap :
+        eventtimes=np.sort(np.mod(eventtimes, adj_linspacedur))  #wrap around adjusted time to keep average rate right
+    if roll :
+        eventtimes=eventtimes-np.min(eventtimes)
+
+    if verbose :
+        print(f'noisySpacingTimeList: (wrapped, rolled) eventtimes =  {eventtimes}')
+
+    # now finally lop off any times starting before the actual requested duration 
+    return eventtimes[eventtimes < durationSecs ] 
 
 
 ''' convert a list of floats (time in seconds) to a signal with pulses at those time '''
@@ -229,7 +314,10 @@ def timeList2Sig(elist, sr, durationSecs) :
 
 
 
-'''adds one (shorter) array (a) in to another (b) starting at startsamp in b'''
+'''
+    Adds one (shorter) array (a) in to another (b) starting at startsamp in b.
+    If necessary, a is trimmed to fit into b. 
+'''
 def addin(a,b,startsamp) :
     b[startsamp:startsamp+len(a)]=[sum(x) for x in zip(b[startsamp:startsamp+len(a)], a)]
     return b
