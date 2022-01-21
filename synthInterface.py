@@ -141,12 +141,19 @@ class DSEnsemble(DSSoundModel) :
     def __init__(self,  models=[], amp=[], sr=dssynthsr, rngseed=dssynthseed) :
         DSSoundModel.__init__(self, sr=sr, rngseed=dssynthseed)
         self.numModels= len(models)
+        self.maxnumModels= len(models)
         self.models=models
         if len(amp) != len(models) :
             print(f'will use uniform amplitudes unless len(amps) == len(models)')
             amp=np.ones(len(models))*.6
         self.amp=amp
         self.sr=sr
+
+    # limits the number of models that will play while preserving the ensemble and its member parameterizations
+    def setNumModels(self,n) :
+        assert n <= self.maxnumModels, f'DSEnsemble: trying to set {n} models tho object was initialized with only {self.maxnumModels}'
+        self.numModels=n
+
 
     #spreadSecs was a bad idea, but for backwards compatibility......
     def generate_old(self,  durationSecs, spreadSecs=0, verbose=False) :
